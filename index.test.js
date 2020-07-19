@@ -108,7 +108,7 @@ describe('SuperExpressive', () => {
 
   testErrorConditition(
     'namedCapture error on bad name',
-    'name is not valid (only letters, numbers, and underscores)',
+    'name "hello world" is not valid (only letters, numbers, and underscores)',
     () => SuperExpressive()
       .namedCapture('hello world')
         .string('hello ')
@@ -230,7 +230,182 @@ describe('SuperExpressive', () => {
   );
 
   testRegexEquality('range', /[a-z]/, SuperExpressive().range('a', 'z'));
+});
 
+describe('subexpressions', () => {
+  const simpleSubExpression = SuperExpressive()
+    .string('hello')
+    .anyChar
+    .string('world');
 
+  testRegexEquality(
+    'simple',
+    /^\d{3,}(?:hello.world)[0-9]$/,
+    SuperExpressive()
+      .startOfInput
+      .atLeast(3).digit
+      .subexpression(simpleSubExpression)
+      .range('0', '9')
+      .endOfInput
+  );
 
+  const flagsSubExpression = SuperExpressive()
+    .allowMultipleMatches
+    .unicode
+    .lineByLine
+    .caseInsensitive
+    .string('hello')
+    .anyChar
+    .string('world');
+
+  testRegexEquality(
+    'ignoring flags = false',
+    /^\d{3,}(?:hello.world)[0-9]$/gymiu,
+    SuperExpressive()
+      .sticky
+      .startOfInput
+      .atLeast(3).digit
+      .subexpression(flagsSubExpression)
+      .range('0', '9')
+      .endOfInput
+  );
+
+  testRegexEquality(
+    'ignoring flags = true',
+    /^\d{3,}(?:hello.world)[0-9]$/y,
+    SuperExpressive()
+      .sticky
+      .startOfInput
+      .atLeast(3).digit
+      .subexpression(flagsSubExpression, { ignoreFlags: true })
+      .range('0', '9')
+      .endOfInput
+  );
+
+  const startEndSubExpression = SuperExpressive()
+    .startOfInput
+    .string('hello')
+    .anyChar
+    .string('world')
+    .endOfInput;
+
+  testRegexEquality(
+    'ignoring start/end = false',
+    /\d{3,}(?:^hello.world$)[0-9]/,
+    SuperExpressive()
+      .atLeast(3).digit
+      .subexpression(startEndSubExpression)
+      .range('0', '9')
+  );
+
+  testRegexEquality(
+    'ignoring start/end = true',
+    /\d{3,}(?:hello.world)[0-9]/,
+    SuperExpressive()
+      .atLeast(3).digit
+      .subexpression(startEndSubExpression, { ignoreStartAndEnd: true })
+      .range('0', '9')
+  );
+
+  testErrorConditition(
+    'start defined in subexpression and main expression',
+    'The parent regex already has a defined start of input. You can ignore a subexpressions startOfInput/endOfInput markers with the ignoreStartAndEnd option',
+    () => SuperExpressive()
+      .startOfInput
+      .atLeast(3).digit
+      .subexpression(startEndSubExpression)
+      .range('0', '9')
+  );
+
+  testErrorConditition(
+    'end defined in subexpression and main expression',
+    'The parent regex already has a defined end of input. You can ignore a subexpressions startOfInput/endOfInput markers with the ignoreStartAndEnd option',
+    () => SuperExpressive()
+      .endOfInput
+      .subexpression(startEndSubExpression)
+  );
+
+  const namedCaptureSubExpression = SuperExpressive()
+    .namedCapture('module')
+      .exactly(2).anyChar
+    .end()
+    .namedBackreference('module');
+
+  testRegexEquality(
+    'no namespacing',
+    /\d{3,}(?:(?<module>.{2})\k<module>)[0-9]/,
+    SuperExpressive()
+      .atLeast(3).digit
+      .subexpression(namedCaptureSubExpression)
+      .range('0', '9')
+  );
+
+  testRegexEquality(
+    'namespacing',
+    /\d{3,}(?:(?<yolomodule>.{2})\k<yolomodule>)[0-9]/,
+    SuperExpressive()
+      .atLeast(3).digit
+      .subexpression(namedCaptureSubExpression, { namespace: 'yolo' })
+      .range('0', '9')
+  );
+
+  testErrorConditition(
+    'group name collision (no namespacing)',
+    'cannot use module again for a capture group',
+    () => SuperExpressive()
+      .namedCapture('module')
+        .atLeast(3).digit
+      .end()
+      .subexpression(namedCaptureSubExpression)
+      .range('0', '9')
+  );
+
+  testErrorConditition(
+    'group name collision (after namespacing)',
+    'cannot use yolomodule again for a capture group',
+    () => SuperExpressive()
+      .namedCapture('yolomodule')
+        .atLeast(3).digit
+      .end()
+      .subexpression(namedCaptureSubExpression, { namespace: 'yolo' })
+      .range('0', '9')
+  );
+
+  const indexedBackreferenceSubexpression = SuperExpressive()
+    .capture
+    .exactly(2).anyChar
+    .end()
+    .backreference(1);
+
+  testRegexEquality(
+    'indexed backreferencing',
+    /(\d{3,})(?:(.{2})\2)\1[0-9]/,
+    SuperExpressive()
+      .capture
+        .atLeast(3).digit
+      .end()
+      .subexpression(indexedBackreferenceSubexpression)
+      .backreference(1)
+      .range('0', '9')
+  );
+
+  const nestedSubexpression = SuperExpressive().exactly(2).anyChar;
+  const firstLayerSubexpression = SuperExpressive()
+    .string('outer begin')
+    .namedCapture('innerSubExpression')
+      .subexpression(nestedSubexpression)
+    .end()
+    .string('outer end');
+
+  testRegexEquality(
+    'deeply nested subexpressions',
+    /(\d{3,})(?:outer begin(?<innerSubExpression>(?:.{2}))outer end)\1[0-9]/,
+    SuperExpressive()
+      .capture
+        .atLeast(3).digit
+      .end()
+      .subexpression(firstLayerSubexpression)
+      .backreference(1)
+      .range('0', '9')
+  );
 });
